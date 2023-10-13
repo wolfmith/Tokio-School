@@ -3,6 +3,26 @@ from tkinter import *
 import sqlite3
 
 
+def isfloat(str):
+    try:
+        float(str)
+    except ValueError:
+        return False
+    return True
+
+
+def create_label_entry(frame, label_text, row, column, entry_textvar=None, readonly=False):
+    label = Label(frame, text=label_text)
+    label.grid(row=row, column=column)
+
+    if readonly:
+        entry = Entry(frame, textvariable=entry_textvar, state='readonly')
+    else:
+        entry = Entry(frame, textvariable=entry_textvar)
+
+    entry.grid(row=row, column=column + 1)
+    return entry
+
 class Produto:
     db = 'database/produtos.db'
 
@@ -44,10 +64,21 @@ class Produto:
         style.layout("mystyle.Treeview", [('mystyle.Treeview.treearea', {'sticky': 'nswe'})])
         # Estrutura da tabela
         self.tabela = ttk.Treeview(height=20, columns=2, style="mystyle.Treeview")
-        self.tabela.grid(row=4, column=0, columnspan=2)
+        self.tabela.grid(row=4, column=0, columnspan=2, sticky="nsew")
+        self.tabela.grid_columnconfigure(0, weight=1)  # Make the column expand with resizing
+        self.tabela.grid_columnconfigure(1, weight=1)  # Make the column expand with resizing
+        self.tabela.grid_rowconfigure(0, weight=1)  # Make the row expand with resizing
         self.tabela.heading('#0', text='Nome', anchor=CENTER)  # Cabeçalho 0
         self.tabela.heading('#1', text='Preço', anchor=CENTER)  # Cabeçalho 1
+        # Create a vertical scrollbar
+        y_scrollbar = ttk.Scrollbar(self.janela, orient="vertical", command=self.tabela.yview)
+        self.tabela.configure(yscrollcommand=y_scrollbar.set)
+        y_scrollbar.grid(row=4, column=2, sticky="ns")
+
+        # Configure Treeview to use the vertical scrollbar
+        self.tabela.configure(yscrollcommand=y_scrollbar.set)
         self.get_produtos()  # Chamada ao método get_produtos() para obter a listagem de produtos ao início da app
+        
         # Botões de Eliminar e Editar
         botão_eliminar = ttk.Button(text='ELIMINAR', command=self.del_produto)
         botão_eliminar.grid(row=5, column=0, sticky=W + E)
@@ -68,21 +99,21 @@ class Produto:
             self.tabela.delete(linha)
 
         # Consulta SQL
-        query = 'SELECT * FROM produto ORDER BY nome DESC'
+        query = 'SELECT * FROM produto ORDER BY nome ASC'
         registos_db = self.db_consulta(query)  # Faz-se a chamada ao método db_consultas
 
         # Escrever os dados no ecrã
         for linha in registos_db:
             print(linha)  # print para verificar por consola os dados
-            self.tabela.insert('', 0, text=linha[1], values=linha[2])
+            self.tabela.insert('', 'end', text=linha[1], values=linha[2], tags=(linha[0],))
 
     def validacao_nome(self):
-        nome_introduzido_por_utilizador = self.nome.get()
-        return len(nome_introduzido_por_utilizador) != 0
+        nome_introduzido = self.nome.get()
+        return len(nome_introduzido) != 0
 
     def validacao_preço(self):
-        preço_introduzido_por_utilizador = self.preço.get()
-        return len(preço_introduzido_por_utilizador) != 0
+        preço_introduzido = self.preço.get()
+        return len(preço_introduzido) != 0 and isfloat(preço_introduzido)
 
     def add_produto(self):
         if self.validacao_nome() and self.validacao_preço():
@@ -96,15 +127,12 @@ class Produto:
 
             # Para debug
             # print(self.nome.get())
-            # print(self.preço.get())
+            #print(self.preço.get())
         elif self.validacao_nome() and self.validacao_preço() == False:
-            print("O preço é obrigatório")
-            self.mensagem['text'] = 'O preço é obrigatório'
+            self.mensagem['text'] = 'Um preço válido é obrigatório'
         elif self.validacao_nome() == False and self.validacao_preço():
-            print("O nome é obrigatório")
-            self.mensagem['text'] = 'O nome é obrigatório'
+            self.mensagem['text'] = 'Um nome é obrigatório'
         else:
-            print("O nome e o preço são obrigatórios")
             self.mensagem['text'] = 'O nome e o preço são obrigatórios'
         # Após inserir os dados, atualize o método para ver as alterações
         self.get_produtos()
@@ -118,27 +146,31 @@ class Produto:
 
         self.mensagem['text'] = ''  # Mensagem inicialmente vazio
         # Comprovação de que se selecione um produto para poder eliminá-lo
-        try:
-            self.tabela.item(self.tabela.selection())['text'][0]
-        except IndexError as e:
+        selected_item = self.tabela.selection()
+        # Get the ID and name of the selected item
+        if selected_item:
+            nome = self.tabela.item(selected_item)['text']
+            id_produto = self.tabela.item(selected_item)['tags'][0]
+        else:
             self.mensagem['text'] = 'Por favor, selecione um produto'
             return
-
-        self.mensagem['text'] = ''
-        nome = self.tabela.item(self.tabela.selection())['text']
-        query = 'DELETE FROM produto WHERE nome = ?'  # Consulta SQL
-        self.db_consulta(query, (nome,))  # Executar a consulta
+        # Delete the item based on its ID
+        query = 'DELETE FROM produto WHERE id = ?'
+        self.db_consulta(query, (id_produto,))
         self.mensagem['text'] = 'Produto {} eliminado com êxito'.format(nome)
-        self.get_produtos()  # Atualizar a tabela de produtos
+        self.get_produtos()  # Update the table
 
     def edit_produto(self):
         self.mensagem['text'] = ''  # Mensagem inicialmente vazia
-        try:
-            self.tabela.item(self.tabela.selection())['text'][0]
-        except IndexError as e:
+        # Comprovação de que se selecione um produto para poder eliminá-lo
+        selected_item = self.tabela.selection()
+        # Get the ID and name of the selected item
+        if selected_item:
+            nome = self.tabela.item(selected_item)['text']
+            id_produto = self.tabela.item(selected_item)['tags'][0]
+        else:
             self.mensagem['text'] = 'Por favor, selecione um produto'
             return
-        nome = self.tabela.item(self.tabela.selection())['text']
         old_preço = self.tabela.item(self.tabela.selection())['values'][0]  # O preço encontra-se dentro de uma lista
 
         self.janela_editar = Toplevel()  # Criar uma janela à frente da principal
@@ -180,23 +212,23 @@ class Produto:
         # Botão Atualizar Produto
         self.botão_atualizar = ttk.Button(frame_ep, text="Atualizar Produto", command=lambda:
         self.atualizar_produtos(self.input_nome_novo.get(), self.input_nome_antigo.get(), self.input_preço_novo.get(),
-                                self.input_preço_antigo.get()))
+                                self.input_preço_antigo.get(), id_produto))
         self.botão_atualizar.grid(row=6, columnspan=2, sticky=W + E)
 
-    def atualizar_produtos(self, novo_nome, antigo_nome, novo_preço, antigo_preço):
+    def atualizar_produtos(self, novo_nome, antigo_nome, novo_preço, antigo_preço, id_produto):
         produto_modificado = False
-        query = 'UPDATE produto SET nome = ?, preço = ? WHERE nome = ? AND preço = ?'
-        if novo_nome != '' and novo_preço != '':
+        query = 'UPDATE produto SET nome = ?, preço = ? WHERE id = ?'
+        if novo_nome != '' and (novo_preço != '' and isfloat(novo_preço)) :
             # Se o utilizador escreve novo nome e novo preço, mudam-se ambos
-            parametros = (novo_nome, novo_preço, antigo_nome, antigo_preço)
+            parametros = (novo_nome, novo_preço, id_produto)
             produto_modificado = True
-        elif novo_nome != '' and novo_preço == '':
+        elif novo_nome != '' and (novo_preço == '' or isfloat(novo_preço)):
             # Se o utilizador deixa vazio o novo preço, mantém-se o preço anterior
-            parametros = (novo_nome, antigo_preço, antigo_nome, antigo_preço)
+            parametros = (novo_nome, antigo_preço, id_produto)
             produto_modificado = True
-        elif novo_nome == '' and novo_preço != '':
+        elif novo_nome == '' and (novo_preço != '' and isfloat(novo_preço)):
             # Se o utilizador deixa vazio o novo nome, mantém-se o nome anterior
-            parametros = (antigo_nome, novo_preço, antigo_nome, antigo_preço)
+            parametros = (antigo_nome, novo_preço, id_produto)
             produto_modificado = True
 
         if (produto_modificado):
